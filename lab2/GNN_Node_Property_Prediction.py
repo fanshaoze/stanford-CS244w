@@ -270,67 +270,77 @@ def test(model, data, split_idx, evaluator, save_model_results=False):
     return train_acc, valid_acc, test_acc
 
 
-if 'IS_GRADESCOPE_ENV' not in os.environ:
-    root = './enzymes'
-    name = 'ENZYMES'
+root = './enzymes'
+name = 'ENZYMES'
+pyg_dataset = TUDataset(root, name)
 
-    # The ENZYMES dataset
-    pyg_dataset = TUDataset(root, name)
 
-    # You will find that there are 600 graphs in this dataset
-    num_classes = get_num_classes(pyg_dataset)
-    num_features = get_num_features(pyg_dataset)
-    print(f"{name} dataset has {num_classes} classes and {num_features} features")
+def main():
+    if 'IS_GRADESCOPE_ENV' not in os.environ:
+        root = './enzymes'
+        name = 'ENZYMES'
 
-    graph_0 = pyg_dataset[0]
-    idx = 100
-    label = get_graph_class(pyg_dataset, idx)
-    print('Graph with index {} has label {}'.format(idx, label))
+        # The ENZYMES dataset
+        pyg_dataset = TUDataset(root, name)
 
-    idx = 200
-    num_edges = get_graph_num_edges(pyg_dataset, idx)
-    print('Graph with index {} has {} edges'.format(idx, num_edges))
+        # You will find that there are 600 graphs in this dataset
+        num_classes = get_num_classes(pyg_dataset)
+        num_features = get_num_features(pyg_dataset)
+        print(f"{name} dataset has {num_classes} classes and {num_features} features")
 
-    # ###################################################################################################
-    # GNN for node classification
-    dataset_name = 'ogbn-arxiv'
-    dataset = PygNodePropPredDataset(name=dataset_name, transform=T.ToSparseTensor())
-    data = dataset[0]
+        graph_0 = pyg_dataset[0]
+        idx = 100
+        label = get_graph_class(pyg_dataset, idx)
+        print('Graph with index {} has label {}'.format(idx, label))
 
-    # Make the adjacency matrix to symmetric
-    data.adj_t = data.adj_t.to_symmetric()
+        idx = 200
+        num_edges = get_graph_num_edges(pyg_dataset, idx)
+        print('Graph with index {} has {} edges'.format(idx, num_edges))
 
-    # If you use GPU, the device should be cuda
-    print('Device: {}'.format(args['device']))
+        # ###################################################################################################
+        # GNN for node classification
+        dataset_name = 'ogbn-arxiv'
+        dataset = PygNodePropPredDataset(name=dataset_name, transform=T.ToSparseTensor())
+        data = dataset[0]
 
-    data = data.to(args['device'])
-    split_idx = dataset.get_idx_split()
-    train_idx = split_idx['train'].to(args['device'])
+        # Make the adjacency matrix to symmetric
+        data.adj_t = data.adj_t.to_symmetric()
 
-    # Please do not change the args
+        # If you use GPU, the device should be cuda
+        print('Device: {}'.format(args['device']))
 
-    model = GCN(data.num_features, args['hidden_dim'], dataset.num_classes, args['num_layers'], args['dropout']).to(
-        args['device'])
-    evaluator = Evaluator(name='ogbn-arxiv')
+        data = data.to(args['device'])
+        split_idx = dataset.get_idx_split()
+        train_idx = split_idx['train'].to(args['device'])
 
-    # reset the parameters to initial random value
-    model.reset_parameters()
+        # Please do not change the args
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
-    loss_fn = F.nll_loss
+        model = GCN(data.num_features, args['hidden_dim'], dataset.num_classes, args['num_layers'], args['dropout']).to(
+            args['device'])
+        evaluator = Evaluator(name='ogbn-arxiv')
 
-    best_model = None
-    best_valid_acc = 0
+        # reset the parameters to initial random value
+        model.reset_parameters()
 
-    for epoch in range(1, 1 + args["epochs"]):
-        loss = train(model, data, train_idx, optimizer, loss_fn)
-        result = test(model, data, split_idx, evaluator)
-        train_acc, valid_acc, test_acc = result
-        if valid_acc > best_valid_acc:
-            best_valid_acc = valid_acc
-            best_model = copy.deepcopy(model)
-        print(f'Epoch: {epoch:02d}, '
-              f'Loss: {loss:.4f}, '
-              f'Train: {100 * train_acc:.2f}%, '
-              f'Valid: {100 * valid_acc:.2f}% '
-              f'Test: {100 * test_acc:.2f}%')
+        optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
+        loss_fn = F.nll_loss
+
+        best_model = None
+        best_valid_acc = 0
+
+        for epoch in range(1, 1 + args["epochs"]):
+            loss = train(model, data, train_idx, optimizer, loss_fn)
+            result = test(model, data, split_idx, evaluator)
+            train_acc, valid_acc, test_acc = result
+            if valid_acc > best_valid_acc:
+                best_valid_acc = valid_acc
+                best_model = copy.deepcopy(model)
+            print(f'Epoch: {epoch:02d}, '
+                  f'Loss: {loss:.4f}, '
+                  f'Train acc: {100 * train_acc:.2f}%, '
+                  f'Valid acc: {100 * valid_acc:.2f}% '
+                  f'Test acc: {100 * test_acc:.2f}%')
+
+
+if __name__ == '__main__':
+    main()
