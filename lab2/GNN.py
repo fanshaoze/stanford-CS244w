@@ -1,6 +1,9 @@
 import torch
 import os
+import pandas as pd
 import os.path as osp
+import copy
+from arguments import args
 
 print("PyTorch has version {}".format(torch.__version__))
 print([osp.dirname(__file__)])
@@ -132,6 +135,7 @@ class GCN(torch.nn.Module):
 
         # The log softmax layer
         self.softmax = None
+        self.num_layers = num_layers
 
         ############# Your code here ############
         ## Note:
@@ -151,13 +155,12 @@ class GCN(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList(
             [GCNConv(in_channels=input_dim, out_channels=hidden_dim)] +
-            [GCNConv(in_channels=hidden_dim, out_channels=hidden_dim) for _ in range(num_layers-2)] +
+            [GCNConv(in_channels=hidden_dim, out_channels=hidden_dim) for _ in range(num_layers - 2)] +
             [GCNConv(in_channels=hidden_dim, out_channels=output_dim)])
 
-        self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers-1)])
-
+        self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers - 1)])
+        # define the output dim
         self.softmax = nn.LogSoftmax(dim=1)
-
 
         #########################################
 
@@ -169,7 +172,7 @@ class GCN(torch.nn.Module):
 
     def reset_parameters(self):
         for conv in self.convs:
-            conv.reset_parameters()
+            conv.reset_parameters()  # TODO: what is this
         for bn in self.bns:
             bn.reset_parameters()
 
@@ -189,6 +192,15 @@ class GCN(torch.nn.Module):
         ## 3. Don't forget to set F.dropout training to self.training
         ## 4. If return_embeds is True, then skip the last softmax layer
         ## (~7 lines of code)
+        for i in range(self.num_layers - 1):
+            x = self.convs[i](x, adj_t)
+            x = self.bns[i](x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)  # TODO: be careful about the parameters
+
+        x = self.convs[self.num_layers - 1](x, adj_t)
+
+        out = x if self.return_embeds else self.softmax(x)
 
         #########################################
 
@@ -208,6 +220,10 @@ def train(model, data, train_idx, optimizer, loss_fn):
     ## 3. Slice the model output and label by train_idx
     ## 4. Feed the sliced output and label to loss_fn
     ## (~4 lines of code)
+    optimizer.zero_grad()
+    out = model(data.x, data.adj_t)
+    # data.y[train_idx]
+    loss = loss_fn(out[train_idx], data.y[train_idx].squeeze())
 
     #########################################
 
@@ -215,6 +231,43 @@ def train(model, data, train_idx, optimizer, loss_fn):
     optimizer.step()
 
     return loss.item()
+
+
+# Test function here
+# Test function here
+@torch.no_grad()
+def test(model, data, split_idx, evaluator, save_model_results=False):
+    # TODO: Implement a function that tests the model by
+    # using the given split_idx and evaluator.
+    model.eval()
+
+    # The output of model on all data
+    out = None
+
+    ############# Your code here ############
+    ## (~1 line of code)
+    ## Note:
+    ## 1. No index slicing here
+    out = model(data.x, data.adj_t)
+    #########################################
+
+    y_pred = out.argmax(dim=-1, keepdim=True)
+
+    train_acc = evaluator.eval({'y_true': data.y[split_idx['train']], 'y_pred': y_pred[split_idx['train']], })['acc']
+    valid_acc = evaluator.eval({'y_true': data.y[split_idx['valid']], 'y_pred': y_pred[split_idx['valid']], })['acc']
+    test_acc = evaluator.eval({'y_true': data.y[split_idx['test']], 'y_pred': y_pred[split_idx['test']], })['acc']
+
+    if save_model_results:
+        print("Saving Model Predictions")
+
+        data = {}
+        data['y_pred'] = y_pred.view(-1).cpu().detach().numpy()
+
+        df = pd.DataFrame(data=data)
+        # Save locally as csv
+        df.to_csv('ogbn-arxiv_node.csv', sep=',', index=False)
+
+    return train_acc, valid_acc, test_acc
 
 
 if 'IS_GRADESCOPE_ENV' not in os.environ:
@@ -238,6 +291,8 @@ if 'IS_GRADESCOPE_ENV' not in os.environ:
     num_edges = get_graph_num_edges(pyg_dataset, idx)
     print('Graph with index {} has {} edges'.format(idx, num_edges))
 
+    # ###################################################################################################
+    # GNN for node classification
     dataset_name = 'ogbn-arxiv'
     dataset = PygNodePropPredDataset(name=dataset_name, transform=T.ToSparseTensor())
     data = dataset[0]
@@ -245,11 +300,37 @@ if 'IS_GRADESCOPE_ENV' not in os.environ:
     # Make the adjacency matrix to symmetric
     data.adj_t = data.adj_t.to_symmetric()
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
     # If you use GPU, the device should be cuda
-    print('Device: {}'.format(device))
+    print('Device: {}'.format(args['device']))
 
-    data = data.to(device)
+    data = data.to(args['device'])
     split_idx = dataset.get_idx_split()
-    train_idx = split_idx['train'].to(device)
+    train_idx = split_idx['train'].to(args['device'])
+
+    # Please do not change the args
+
+    model = GCN(data.num_features, args['hidden_dim'], dataset.num_classes, args['num_layers'], args['dropout']).to(
+        args['device'])
+    evaluator = Evaluator(name='ogbn-arxiv')
+
+    # reset the parameters to initial random value
+    model.reset_parameters()
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
+    loss_fn = F.nll_loss
+
+    best_model = None
+    best_valid_acc = 0
+
+    for epoch in range(1, 1 + args["epochs"]):
+        loss = train(model, data, train_idx, optimizer, loss_fn)
+        result = test(model, data, split_idx, evaluator)
+        train_acc, valid_acc, test_acc = result
+        if valid_acc > best_valid_acc:
+            best_valid_acc = valid_acc
+            best_model = copy.deepcopy(model)
+        print(f'Epoch: {epoch:02d}, '
+              f'Loss: {loss:.4f}, '
+              f'Train: {100 * train_acc:.2f}%, '
+              f'Valid: {100 * valid_acc:.2f}% '
+              f'Test: {100 * test_acc:.2f}%')
