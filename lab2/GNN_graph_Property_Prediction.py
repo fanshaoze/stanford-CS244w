@@ -29,8 +29,7 @@ from torch_geometric.nn import global_add_pool, global_mean_pool
 class GCN_Graph(torch.nn.Module):
     def __init__(self, hidden_dim, output_dim, num_layers, dropout):
         super(GCN_Graph, self).__init__()
-
-        # Load encoders for Atoms in molecule graphs
+        # TODO: Load encoders for Atoms in molecule graphs
         self.node_encoder = AtomEncoder(hidden_dim)
 
         # Node embedding model

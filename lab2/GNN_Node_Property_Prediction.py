@@ -120,8 +120,7 @@ def test_PygNodePropPredDataset():
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers,
-                 dropout, return_embeds=False):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout, return_embeds=False):
         # TODO: Implement a function that initializes self.convs,
         # self.bns, and self.softmax.
 
@@ -196,7 +195,9 @@ class GCN(torch.nn.Module):
             x = self.convs[i](x, adj_t)
             x = self.bns[i](x)
             x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)  # TODO: be careful about the parameters
+            x = F.dropout(x, p=self.dropout, training=self.training)
+            # https://discuss.pytorch.org/t/what-exactle-does-inplace-do-when-set-to-true-false/130110
+            # training for avoid using dropout during validation and test
 
         x = self.convs[self.num_layers - 1](x, adj_t)
 
