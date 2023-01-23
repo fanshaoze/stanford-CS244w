@@ -5,6 +5,7 @@ import os.path as osp
 import copy
 from arguments import args, GPP_args
 from GNN_Node_Property_Prediction import GCN
+
 print("PyTorch has version {}".format(torch.__version__))
 print([osp.dirname(__file__)])
 
@@ -24,6 +25,7 @@ from tqdm import tqdm
 
 from ogb.graphproppred.mol_encoder import AtomEncoder
 from torch_geometric.nn import global_add_pool, global_mean_pool
+
 
 ### GCN to predict graph property
 class GCN_Graph(torch.nn.Module):
@@ -81,7 +83,6 @@ class GCN_Graph(torch.nn.Module):
         x = self.gnn_node(embed, edge_index)
         x = self.pool(x, batch)
         out = self.linear(x)
-
 
         #########################################
 
@@ -164,6 +165,7 @@ def eval(model, device, loader, evaluator, save_model_results=True, save_file=No
 
     return evaluator.eval(input_dict)
 
+
 def main():
     # Load the dataset
     dataset = PygGraphPropPredDataset(name='ogbg-molhiv')
@@ -204,8 +206,9 @@ def main():
         val_result = eval(model, GPP_args['device'], valid_loader, evaluator, True, "GNN_GPP")
         test_result = eval(model, GPP_args['device'], test_loader, evaluator, True, "GNN_GPP")
 
-        train_acc, valid_acc, test_acc = train_result[dataset.eval_metric], val_result[dataset.eval_metric], test_result[
-            dataset.eval_metric]
+        train_acc, valid_acc, test_acc = train_result[dataset.eval_metric], val_result[dataset.eval_metric], \
+                                         test_result[
+                                             dataset.eval_metric]
         if valid_acc > best_valid_acc:
             best_valid_acc = valid_acc
             best_model = copy.deepcopy(model)
@@ -218,5 +221,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
