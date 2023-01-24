@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch.optim import SGD
 from torch.nn import Linear
 from torch_geometric.nn import GCNConv
+from lab1.arguments import args
 
 
 def average_degree(num_edges, num_nodes):
@@ -305,100 +306,84 @@ def random_and_split_data(_edge_list, _label, train_r):
     test_label = rand_label[int(train_r*len(rand_label)):len(rand_label)]
     return rand_edge_list, rand_label, train_edge_list, train_label, test_edge_list, test_label
 
+def main(args):
+    random_seed = 1
+    # G = nx.karate_club_graph()
+    G = nx.dense_gnm_random_graph(100, 2000, seed=random_seed)
 
-random_seed = 1
-# G = nx.karate_club_graph()
-G = nx.dense_gnm_random_graph(100, 2000, seed=random_seed)
+    # G is an undirected graph
+    print(type(G))
+    # Visualize the graph
+    # nx.draw(G, with_labels=True)
+    # plt.show()
 
-# G is an undirected graph
-print(type(G))
-# Visualize the graph
-# nx.draw(G, with_labels=True)
-# plt.show()
+    num_edges = G.number_of_edges()
+    num_nodes = G.number_of_nodes()
+    avg_degree = average_degree(num_edges, num_nodes)
+    print(f"Average degree of karate club network is {avg_degree}")
 
-num_edges = G.number_of_edges()
-num_nodes = G.number_of_nodes()
-avg_degree = average_degree(num_edges, num_nodes)
-print(f"Average degree of karate club network is {avg_degree}")
+    avg_cluster_coef = average_clustering_coefficient(G)
+    print("Average clustering coefficient of karate club network is {}".format(avg_cluster_coef))
 
-avg_cluster_coef = average_clustering_coefficient(G)
-print("Average clustering coefficient of karate club network is {}".format(avg_cluster_coef))
+    beta = 0.8
+    r0 = 1 / G.number_of_nodes()
+    node = 0
 
-beta = 0.8
-r0 = 1 / G.number_of_nodes()
-node = 0
+    torch_test()
+    # pos: exist in G, neg: in-exit in G
+    pos_edge_list = graph_to_edge_list(G)
 
-torch_test()
-# pos: exist in G, neg: in-exit in G
-pos_edge_list = graph_to_edge_list(G)
+    # Sample 78 negative edges
+    neg_edge_list = sample_negative_edges(G, 2)
+    pos_edge_index = edge_list_to_tensor(pos_edge_list)
+    print("The pos_edge_index tensor has shape {}".format(pos_edge_index.shape))
+    print("The pos_edge_index tensor has sum value {}".format(torch.sum(pos_edge_index)))
+    # Transform the negative edge list to tensor
+    neg_edge_index = edge_list_to_tensor(neg_edge_list)
+    print("The neg_edge_index tensor has shape {}".format(neg_edge_index.shape))
 
-# Sample 78 negative edges
-neg_edge_list = sample_negative_edges(G, 2)
-pos_edge_index = edge_list_to_tensor(pos_edge_list)
-print("The pos_edge_index tensor has shape {}".format(pos_edge_index.shape))
-print("The pos_edge_index tensor has sum value {}".format(torch.sum(pos_edge_index)))
-# Transform the negative edge list to tensor
-neg_edge_index = edge_list_to_tensor(neg_edge_list)
-print("The neg_edge_index tensor has shape {}".format(neg_edge_index.shape))
+    embedding_test()
 
-embedding_test()
+    emb = create_node_emb(num_node=100, _embedding_dim=32)
+    ids = torch.LongTensor([0, 3])
+    # Print the embedding layer
+    print("Embedding: {}".format(emb))
 
-emb = create_node_emb(num_node=100, _embedding_dim=32)
-ids = torch.LongTensor([0, 3])
-# Print the embedding layer
-print("Embedding: {}".format(emb))
+    # An example that gets the embeddings for node 0 and 3
+    print(emb(ids))
 
-# An example that gets the embeddings for node 0 and 3
-print(emb(ids))
+    # visualize_emb(emb)
 
-# visualize_emb(emb)
+    # loss_fn = nn.BCELoss()
+    loss_fn = nn.MSELoss()
+    sigmoid = nn.Sigmoid()
 
-# loss_fn = nn.BCELoss()
-loss_fn = nn.MSELoss()
-sigmoid = nn.Sigmoid()
+    print(pos_edge_index.shape)
 
-print(pos_edge_index.shape)
+    # Generate the positive and negative labels
+    pos_label = torch.ones(pos_edge_index.shape[1], )
+    neg_label = torch.zeros(neg_edge_index.shape[1], )
 
-# Generate the positive and negative labels
-pos_label = torch.ones(pos_edge_index.shape[1], )
-neg_label = torch.zeros(neg_edge_index.shape[1], )
+    jc_label = nx.jaccard_coefficient(G, G.edges)
+    edge_list = []
+    labels = []
+    for u, v, p in jc_label:
+        print(print(f"({u}, {v}) -> {p:.8f}"))
+        edge_list.append((u, v))
+        labels.append(p)
+    rand_edge_list, rand_label, train_edge_list, train_label, test_edge_list, test_label = \
+        random_and_split_data(edge_list, labels, train_r=0.8)
+    train_edge = edge_list_to_tensor(train_edge_list)
+    train_label = torch.tensor(train_label)
+    test_edge = edge_list_to_tensor(test_edge_list)
+    test_label = torch.tensor(test_label)
+    # Concat positive and negative labels into one tensor
+    # train_label = torch.cat([pos_label, neg_label], dim=0)
 
-jc_label = nx.jaccard_coefficient(G, G.edges)
-edge_list = []
-labels = []
-for u, v, p in jc_label:
-    print(print(f"({u}, {v}) -> {p:.8f}"))
-    edge_list.append((u, v))
-    labels.append(p)
-rand_edge_list, rand_label, train_edge_list, train_label, test_edge_list, test_label = \
-    random_and_split_data(edge_list, labels, train_r=0.8)
-train_edge = edge_list_to_tensor(train_edge_list)
-train_label = torch.tensor(train_label)
-test_edge = edge_list_to_tensor(test_edge_list)
-test_label = torch.tensor(test_label)
-# Concat positive and negative labels into one tensor
-# train_label = torch.cat([pos_label, neg_label], dim=0)
+    # Concat positive and negative edges into one tensor
+    # Since the network is very small, we do not split the edges into val/test sets
+    # train_edge = torch.cat([pos_edge_index, neg_edge_index], dim=1)
+    # print(train_edge.shape)
 
-# Concat positive and negative edges into one tensor
-# Since the network is very small, we do not split the edges into val/test sets
-# train_edge = torch.cat([pos_edge_index, neg_edge_index], dim=1)
-# print(train_edge.shape)
+    train(emb, loss_fn, sigmoid, train_label, train_edge, test_label, test_edge)
 
-train(emb, loss_fn, sigmoid, train_label, train_edge, test_label, test_edge)
-
-# epoch 1 tensor([[0.7284, 0.8904, 0.4616,  ..., 0.4629, 0.9902, 0.7196],
-#         [0.7284, 0.8904, 0.4616,  ..., 0.4629, 0.9902, 0.7196],
-#         [0.7284, 0.8904, 0.4616,  ..., 0.4629, 0.9902, 0.7196],
-#         ...,
-#         [0.8522, 0.3221, 0.4837,  ..., 0.2544, 0.5725, 0.2110],
-#         [0.8522, 0.3221, 0.4837,  ..., 0.2544, 0.5725, 0.2110],
-#         [0.8522, 0.3221, 0.4837,  ..., 0.2544, 0.5725, 0.2110]],
-#        grad_fn=<EmbeddingBackward0>)
-# epoch 10 tensor([[0.7293, 0.8911, 0.4625,  ..., 0.4638, 0.9913, 0.7205],
-#         [0.7293, 0.8911, 0.4625,  ..., 0.4638, 0.9913, 0.7205],
-#         [0.7293, 0.8911, 0.4625,  ..., 0.4638, 0.9913, 0.7205],
-#         ...,
-#         [0.8075, 0.2712, 0.4353,  ..., 0.2189, 0.5273, 0.1771],
-#         [0.8075, 0.2712, 0.4353,  ..., 0.2189, 0.5273, 0.1771],
-#         [0.8075, 0.2712, 0.4353,  ..., 0.2189, 0.5273, 0.1771]],
-#        grad_fn=<EmbeddingBackward0>)
