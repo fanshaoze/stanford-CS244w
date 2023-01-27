@@ -1,3 +1,5 @@
+import json
+
 import networkx as nx
 import torch
 import random
@@ -9,7 +11,8 @@ import torch.nn as nn
 from torch.optim import SGD
 from torch.nn import Linear
 from torch_geometric.nn import GCNConv
-from lab1.arguments import args
+from lab1.arguments import get_args
+import torch.nn.functional as F
 
 
 def average_degree(num_edges, num_nodes):
@@ -193,26 +196,26 @@ def create_node_emb(num_node=34, _embedding_dim=16):
     return emb
 
 
-def visualize_emb(emb):
-    X = emb.weight.data.numpy()
-    pca = PCA(n_components=2)
-    components = pca.fit_transform(X)
-    plt.figure(figsize=(6, 6))
-    club1_x = []
-    club1_y = []
-    club2_x = []
-    club2_y = []
-    for node in G.nodes(data=True):
-        if node[1]['club'] == 'Mr. Hi':
-            club1_x.append(components[node[0]][0])
-            club1_y.append(components[node[0]][1])
-        else:
-            club2_x.append(components[node[0]][0])
-            club2_y.append(components[node[0]][1])
-    plt.scatter(club1_x, club1_y, color="red", label="Mr. Hi")
-    plt.scatter(club2_x, club2_y, color="blue", label="Officer")
-    plt.legend()
-    # plt.show()
+# def visualize_emb(emb):
+#     X = emb.weight.data.numpy()
+#     pca = PCA(n_components=2)
+#     components = pca.fit_transform(X)
+#     plt.figure(figsize=(6, 6))
+#     club1_x = []
+#     club1_y = []
+#     club2_x = []
+#     club2_y = []
+#     for node in G.nodes(data=True):
+#         if node[1]['club'] == 'Mr. Hi':
+#             club1_x.append(components[node[0]][0])
+#             club1_y.append(components[node[0]][1])
+#         else:
+#             club2_x.append(components[node[0]][0])
+#             club2_y.append(components[node[0]][1])
+#     plt.scatter(club1_x, club1_y, color="red", label="Mr. Hi")
+#     plt.scatter(club2_x, club2_y, color="blue", label="Officer")
+#     plt.legend()
+#     # plt.show()
 
 
 def accuracy(pred, label):
@@ -235,24 +238,30 @@ def accuracy(pred, label):
     return round(accu, 4)
 
 
-def train(emb, loss_fn, sigmoid, train_label, train_edge, test_label, test_edge):
-    # TODO: Train the embedding layer here. You can also change epochs and
-    # learning rate. In general, you need to implement:
-    # (1) Get the embeddings of the nodes in train_edge
-    # (2) Dot product the embeddings between each node pair
-    # (3) Feed the dot product result into sigmoid
-    # (4) Feed the sigmoid output into the loss_fn
-    # (5) Print both loss and accuracy of each epoch
-    # (6) Update the embeddings using the loss and optimizer
-    # (as a sanity check, the loss should decrease during training)
+def train(emb, hpara, loss_fn, sigmoid, train_label, train_edge, dev_label, dev_edge, test_label, test_edge):
+    """
 
-    epochs = 20000
+    :param emb:
+    :param hpara:
+    :param loss_fn:
+    :param sigmoid:
+    :param train_label:
+    :param train_edge:
+    :param validate_label:
+    :param validate_edge:
+    :param test_label:
+    :param test_edge:
+    :return:
+    """
+
+    epochs = hpara.epoch
     # TODO: early stopping, learning_rate,
-    learning_rate = 0.1
+    learning_rate = hpara.lr
 
     optimizer = SGD(emb.parameters(), lr=learning_rate, momentum=0.9)
-
-    for i in range(epochs):
+    best_dev_metric = 100
+    patience_counter = 0
+    for ep in range(epochs):
         optimizer.zero_grad()
         ############# Your code here ############
         # same env, same embeddings for same input
@@ -265,29 +274,43 @@ def train(emb, loss_fn, sigmoid, train_label, train_edge, test_label, test_edge)
         pred = torch.sum(emb_start * emb_end, dim=-1)
         pred = sigmoid(pred)
         loss = loss_fn(pred, train_label)
+
+        dev_emb_start = emb(dev_edge[0])
+        dev_emb_end = emb(dev_edge[1])
+        dev_pred = torch.sum(dev_emb_start * dev_emb_end, dim=-1)
+        dev_pred = F.sigmoid(dev_pred)
+        dev_metric = F.mse_loss(dev_pred, dev_label)
+
+        test_emb_start = emb(test_edge[0])
+        test_emb_end = emb(test_edge[1])
+        test_pred = torch.sum(test_emb_start * test_emb_end, dim=-1)
+        test_pred = F.sigmoid(test_pred)
+        test_metric = F.mse_loss(test_pred, test_label)
+
+        if dev_metric < best_dev_metric - 1e-5:
+            # better loss found
+            patience_counter = 0
+            best_dev_metric = dev_metric
+            best_model_test_metric = test_metric
+            if ep % 10 == 0:
+                print(f"train loss:{loss}, test Loss: {best_model_test_metric}")
+        else:
+            patience_counter += 1
+
+        if patience_counter > hpara.patience:
+            break
+
         loss.backward()
         optimizer.step()
 
-        print(f"{i} epoch Loss: {loss}, accuracy: {accuracy(pred=pred, label=train_label)}")
-
-        #########################################
-
-    # test
-    emb_start = emb(test_edge[0])
-    emb_end = emb(test_edge[1])
-
-    # print(emb_start, emb_end)
-    # pred = torch.dot(emb_start, emb_end)
-
-    pred = torch.sum(emb_start * emb_end, dim=-1)
-    pred = sigmoid(pred)
-    loss = loss_fn(pred, test_label)
-    print(f"test Loss: {loss}, accuracy: {accuracy(pred=pred, label=test_label)}")
+    print(f"test Loss: {best_model_test_metric}, epoch{ep}",)
+    return best_model_test_metric
 
 
-def random_and_split_data(_edge_list, _label, train_r):
+def random_and_split_data(_edge_list, _label, train_r, validate_r):
     """
 
+    :param validate_r:
     :param train_r:
     :param _edge_list:
     :param _label:
@@ -300,92 +323,116 @@ def random_and_split_data(_edge_list, _label, train_r):
     for i in _ids:
         rand_edge_list.append(_edge_list[i])
         rand_label.append(_label[i])
-    train_edge_list = rand_edge_list[0:int(train_r*len(rand_edge_list))]
-    train_label = rand_label[0:int(train_r*len(rand_label))]
-    test_edge_list = rand_edge_list[int(train_r*len(rand_edge_list)):len(rand_edge_list)]
-    test_label = rand_label[int(train_r*len(rand_label)):len(rand_label)]
-    return rand_edge_list, rand_label, train_edge_list, train_label, test_edge_list, test_label
+    train_edge_list = rand_edge_list[0:int(train_r * len(rand_edge_list))]
+    train_label = rand_label[0:int(train_r * len(rand_label))]
+    validate_edge_list = rand_edge_list[int(train_r * len(rand_edge_list)):int((train_r + validate_r) * len(rand_edge_list))]
+    validate_label = rand_label[int(train_r * len(rand_label)):int((train_r + validate_r) * len(rand_label))]
+    test_edge_list = rand_edge_list[int((train_r + validate_r) * len(rand_edge_list)):len(rand_edge_list)]
+    test_label = rand_label[int((train_r + validate_r) * len(rand_label)):len(rand_label)]
+    return rand_edge_list, rand_label, train_edge_list, train_label, validate_edge_list, validate_label, \
+           test_edge_list, test_label
 
-def main(args):
-    random_seed = 1
-    # G = nx.karate_club_graph()
-    G = nx.dense_gnm_random_graph(100, 2000, seed=random_seed)
 
-    # G is an undirected graph
-    print(type(G))
-    # Visualize the graph
-    # nx.draw(G, with_labels=True)
-    # plt.show()
+def main(args, G):
+    results = {}
+    for r_idx in range(len(args.train_ratios)):
+        results[args.train_ratios[r_idx]] = [0, 0]
+    for r_seed in args.seeds:
+        random.seed(r_seed)
+        # G is an undirected graph
+        print(type(G))
+        # Visualize the graph
+        # nx.draw(G, with_labels=True)
+        # plt.show()
 
-    num_edges = G.number_of_edges()
-    num_nodes = G.number_of_nodes()
-    avg_degree = average_degree(num_edges, num_nodes)
-    print(f"Average degree of karate club network is {avg_degree}")
+        num_edges = G.number_of_edges()
+        num_nodes = G.number_of_nodes()
+        avg_degree = average_degree(num_edges, num_nodes)
+        print(f"Average degree of karate club network is {avg_degree}")
 
-    avg_cluster_coef = average_clustering_coefficient(G)
-    print("Average clustering coefficient of karate club network is {}".format(avg_cluster_coef))
+        avg_cluster_coef = average_clustering_coefficient(G)
+        print("Average clustering coefficient of karate club network is {}".format(avg_cluster_coef))
 
-    beta = 0.8
-    r0 = 1 / G.number_of_nodes()
-    node = 0
+        beta = 0.8
+        r0 = 1 / G.number_of_nodes()
+        node = 0
 
-    torch_test()
-    # pos: exist in G, neg: in-exit in G
-    pos_edge_list = graph_to_edge_list(G)
+        torch_test()
+        # pos: exist in G, neg: in-exit in G
+        pos_edge_list = graph_to_edge_list(G)
 
-    # Sample 78 negative edges
-    neg_edge_list = sample_negative_edges(G, 2)
-    pos_edge_index = edge_list_to_tensor(pos_edge_list)
-    print("The pos_edge_index tensor has shape {}".format(pos_edge_index.shape))
-    print("The pos_edge_index tensor has sum value {}".format(torch.sum(pos_edge_index)))
-    # Transform the negative edge list to tensor
-    neg_edge_index = edge_list_to_tensor(neg_edge_list)
-    print("The neg_edge_index tensor has shape {}".format(neg_edge_index.shape))
+        # Sample 78 negative edges
+        neg_edge_list = sample_negative_edges(G, 2)
+        pos_edge_index = edge_list_to_tensor(pos_edge_list)
+        print("The pos_edge_index tensor has shape {}".format(pos_edge_index.shape))
+        print("The pos_edge_index tensor has sum value {}".format(torch.sum(pos_edge_index)))
+        # Transform the negative edge list to tensor
+        neg_edge_index = edge_list_to_tensor(neg_edge_list)
+        print("The neg_edge_index tensor has shape {}".format(neg_edge_index.shape))
 
-    embedding_test()
+        embedding_test()
 
-    emb = create_node_emb(num_node=100, _embedding_dim=32)
-    ids = torch.LongTensor([0, 3])
-    # Print the embedding layer
-    print("Embedding: {}".format(emb))
+        emb = create_node_emb(num_node=100, _embedding_dim=32)
+        ids = torch.LongTensor([0, 3])
+        # Print the embedding layer
+        print("Embedding: {}".format(emb))
 
-    # An example that gets the embeddings for node 0 and 3
-    print(emb(ids))
+        # An example that gets the embeddings for node 0 and 3
+        print(emb(ids))
 
-    # visualize_emb(emb)
+        # visualize_emb(emb)
 
-    # loss_fn = nn.BCELoss()
-    loss_fn = nn.MSELoss()
-    sigmoid = nn.Sigmoid()
+        # loss_fn = nn.BCELoss()
+        loss_fn = nn.MSELoss()
+        sigmoid = nn.Sigmoid()
 
-    print(pos_edge_index.shape)
+        print(pos_edge_index.shape)
 
-    # Generate the positive and negative labels
-    pos_label = torch.ones(pos_edge_index.shape[1], )
-    neg_label = torch.zeros(neg_edge_index.shape[1], )
+        # Generate the positive and negative labels
+        pos_label = torch.ones(pos_edge_index.shape[1], )
+        neg_label = torch.zeros(neg_edge_index.shape[1], )
 
-    jc_label = nx.jaccard_coefficient(G, G.edges)
-    edge_list = []
-    labels = []
-    for u, v, p in jc_label:
-        print(print(f"({u}, {v}) -> {p:.8f}"))
-        edge_list.append((u, v))
-        labels.append(p)
-    rand_edge_list, rand_label, train_edge_list, train_label, test_edge_list, test_label = \
-        random_and_split_data(edge_list, labels, train_r=0.8)
-    train_edge = edge_list_to_tensor(train_edge_list)
-    train_label = torch.tensor(train_label)
-    test_edge = edge_list_to_tensor(test_edge_list)
-    test_label = torch.tensor(test_label)
-    # Concat positive and negative labels into one tensor
-    # train_label = torch.cat([pos_label, neg_label], dim=0)
+        jc_label = nx.jaccard_coefficient(G, G.edges)
+        edge_list = []
+        labels = []
+        for u, v, p in jc_label:
+            # print(print(f"({u}, {v}) -> {p:.8f}"))
+            edge_list.append((u, v))
+            labels.append(p)
+        assert len(args.train_ratios) == len(args.dev_ratios)
+        for r_idx in range(len(args.train_ratios)):
+            rand_edge_list, rand_label, \
+            train_edge_list, train_label, validate_edge_list, validate_label, test_edge_list, test_label = \
+                random_and_split_data(edge_list, labels, train_r=args.train_ratios[r_idx],
+                                      validate_r=args.dev_ratios[r_idx])
+            train_edge = edge_list_to_tensor(train_edge_list)
+            train_label = torch.tensor(train_label)
+            validate_edge = edge_list_to_tensor(validate_edge_list)
+            validate_label = torch.tensor(validate_label)
+            test_edge = edge_list_to_tensor(test_edge_list)
+            test_label = torch.tensor(test_label)
+            # Concat positive and negative labels into one tensor
+            # train_label = torch.cat([pos_label, neg_label], dim=0)
 
-    # Concat positive and negative edges into one tensor
-    # Since the network is very small, we do not split the edges into val/test sets
-    # train_edge = torch.cat([pos_edge_index, neg_edge_index], dim=1)
-    # print(train_edge.shape)
+            # Concat positive and negative edges into one tensor
+            # Since the network is very small, we do not split the edges into val/test sets
+            # train_edge = torch.cat([pos_edge_index, neg_edge_index], dim=1)
+            # print(train_edge.shape)
 
-    train(emb, loss_fn, sigmoid, train_label, train_edge, test_label, test_edge)
+            model_metric = \
+                train(emb, args, loss_fn, sigmoid, train_label, train_edge, validate_label, validate_edge, test_label,
+                      test_edge)
+            results[args.train_ratios[r_idx]][0] += 1
+            model_metric = float(model_metric)
+            results[args.train_ratios[r_idx]][1] += (model_metric - results[args.train_ratios[r_idx]][1]) / \
+                                                    results[args.train_ratios[r_idx]][0]
+            print(results)
+
+        json.dump(results, open("results.json", "w"))
+    print(results)
+
 
 if __name__ == '__main__':
-    main(args=args)
+    _args = get_args()
+    graph = nx.dense_gnm_random_graph(100, 2000, seed=1)
+    main(args=_args, G=graph)
