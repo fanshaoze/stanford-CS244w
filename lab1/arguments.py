@@ -14,10 +14,10 @@ def get_args(arg_list=None):
     parser.add_argument('-test_ratio', type=float, default=0,
                         help='proportion of data used for testing (default 1 - train_ratio - dev_ratio)')
 
-    parser.add_argument('-epoch', type=int, default=50)
+    parser.add_argument('-epoch', type=int, default=10000)
     parser.add_argument('-batch_size', type=int, default=512)
-    parser.add_argument('-patience', type=int, default=5)
-    parser.add_argument('-seeds', nargs='+', default=[i for i in range(10)], help='seeds')
+    parser.add_argument('-patience', type=int, default=100)
+    parser.add_argument('-seeds', nargs='+', default=[i for i in range(100)], help='seeds')
 
     if arg_list is not None:
         args = parser.parse_args(arg_list)

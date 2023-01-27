@@ -292,18 +292,17 @@ def train(emb, hpara, loss_fn, sigmoid, train_label, train_edge, dev_label, dev_
             patience_counter = 0
             best_dev_metric = dev_metric
             best_model_test_metric = test_metric
-            if ep % 10 == 0:
-                print(f"train loss:{loss}, test Loss: {best_model_test_metric}")
         else:
             patience_counter += 1
 
         if patience_counter > hpara.patience:
             break
-
+        # if ep % 100 == 0:
+        #     print(f"train loss:{loss}, test Loss: {best_model_test_metric}, ep:{ep}")
         loss.backward()
         optimizer.step()
 
-    print(f"test Loss: {best_model_test_metric}, epoch{ep}",)
+    print(f"---------------------test Loss: {best_model_test_metric}, epoch:{ep}", )
     return best_model_test_metric
 
 
@@ -325,7 +324,8 @@ def random_and_split_data(_edge_list, _label, train_r, validate_r):
         rand_label.append(_label[i])
     train_edge_list = rand_edge_list[0:int(train_r * len(rand_edge_list))]
     train_label = rand_label[0:int(train_r * len(rand_label))]
-    validate_edge_list = rand_edge_list[int(train_r * len(rand_edge_list)):int((train_r + validate_r) * len(rand_edge_list))]
+    validate_edge_list = rand_edge_list[
+                         int(train_r * len(rand_edge_list)):int((train_r + validate_r) * len(rand_edge_list))]
     validate_label = rand_label[int(train_r * len(rand_label)):int((train_r + validate_r) * len(rand_label))]
     test_edge_list = rand_edge_list[int((train_r + validate_r) * len(rand_edge_list)):len(rand_edge_list)]
     test_label = rand_label[int((train_r + validate_r) * len(rand_label)):len(rand_label)]
@@ -340,45 +340,45 @@ def main(args, G):
     for r_seed in args.seeds:
         random.seed(r_seed)
         # G is an undirected graph
-        print(type(G))
+        # print(type(G))
         # Visualize the graph
         # nx.draw(G, with_labels=True)
         # plt.show()
 
         num_edges = G.number_of_edges()
         num_nodes = G.number_of_nodes()
-        avg_degree = average_degree(num_edges, num_nodes)
-        print(f"Average degree of karate club network is {avg_degree}")
+        # avg_degree = average_degree(num_edges, num_nodes)
+        # print(f"Average degree of karate club network is {avg_degree}")
 
-        avg_cluster_coef = average_clustering_coefficient(G)
-        print("Average clustering coefficient of karate club network is {}".format(avg_cluster_coef))
+        # avg_cluster_coef = average_clustering_coefficient(G)
+        # print("Average clustering coefficient of karate club network is {}".format(avg_cluster_coef))
 
         beta = 0.8
         r0 = 1 / G.number_of_nodes()
         node = 0
 
-        torch_test()
+        # torch_test()
         # pos: exist in G, neg: in-exit in G
         pos_edge_list = graph_to_edge_list(G)
 
         # Sample 78 negative edges
         neg_edge_list = sample_negative_edges(G, 2)
         pos_edge_index = edge_list_to_tensor(pos_edge_list)
-        print("The pos_edge_index tensor has shape {}".format(pos_edge_index.shape))
-        print("The pos_edge_index tensor has sum value {}".format(torch.sum(pos_edge_index)))
+        # print("The pos_edge_index tensor has shape {}".format(pos_edge_index.shape))
+        # print("The pos_edge_index tensor has sum value {}".format(torch.sum(pos_edge_index)))
         # Transform the negative edge list to tensor
         neg_edge_index = edge_list_to_tensor(neg_edge_list)
-        print("The neg_edge_index tensor has shape {}".format(neg_edge_index.shape))
+        # print("The neg_edge_index tensor has shape {}".format(neg_edge_index.shape))
 
-        embedding_test()
+        # embedding_test()
 
         emb = create_node_emb(num_node=100, _embedding_dim=32)
         ids = torch.LongTensor([0, 3])
         # Print the embedding layer
-        print("Embedding: {}".format(emb))
+        # print("Embedding: {}".format(emb))
 
         # An example that gets the embeddings for node 0 and 3
-        print(emb(ids))
+        # print(emb(ids))
 
         # visualize_emb(emb)
 
@@ -386,7 +386,7 @@ def main(args, G):
         loss_fn = nn.MSELoss()
         sigmoid = nn.Sigmoid()
 
-        print(pos_edge_index.shape)
+        # print(pos_edge_index.shape)
 
         # Generate the positive and negative labels
         pos_label = torch.ones(pos_edge_index.shape[1], )
@@ -426,7 +426,7 @@ def main(args, G):
             model_metric = float(model_metric)
             results[args.train_ratios[r_idx]][1] += (model_metric - results[args.train_ratios[r_idx]][1]) / \
                                                     results[args.train_ratios[r_idx]][0]
-            print(results)
+        print(results)
 
         json.dump(results, open("results.json", "w"))
     print(results)
