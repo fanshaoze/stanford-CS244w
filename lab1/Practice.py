@@ -387,3 +387,5 @@ def main(args):
 
     train(emb, loss_fn, sigmoid, train_label, train_edge, test_label, test_edge)
 
+if __name__ == '__main__':
+    main(args=args)
